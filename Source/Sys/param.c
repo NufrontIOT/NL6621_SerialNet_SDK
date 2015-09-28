@@ -290,6 +290,10 @@ INT32 InfKeySet(UINT8 Index, UINT8 *KeyBuf, UINT8 KeyLen)
 	SysParam.WiFiCfg.KeyIndex = Index;
 	SysParam.WiFiCfg.KeyLength = KeyLen;
 	NST_MOVE_MEM(SysParam.WiFiCfg.PSK, KeyBuf, KeyLen);
+
+	if (KeyLen < 64)
+		SysParam.WiFiCfg.PSK[KeyLen] = 0;
+	
 	return 0;
 }
 
@@ -638,6 +642,7 @@ INT32 InfTxPwrLevelSet(PARAM_TX_PWR_LEVEL TxPwrLevel)
 		0 - disable
 		1 - legacy ps mode, send ps-poll frame to ap for buffered data
 		2 - fast ps mode, switch to active mode dynamically when there is data to send or receive
+		3 - soft ps mode, mcu keep running, open/close radio power dynamically.
 		
 	Return Value:
 		0 - success
@@ -648,7 +653,7 @@ INT32 InfTxPwrLevelSet(PARAM_TX_PWR_LEVEL TxPwrLevel)
 -------------------------------------------------------------------------*/
 INT32 InfPowerSaveSet(UINT8 PowerSaveMode)
 {	
-	if (PowerSaveMode > PS_MODE_FAST)
+	if (PowerSaveMode > PS_MODE_SOFT)
 	    return -1;
 
 	PostTaskMsg(gpMacMngTskMsgQ, MLME_PS_MODE_SET_ID, (PUINT8)&PowerSaveMode, 1);

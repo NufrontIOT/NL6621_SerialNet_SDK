@@ -32,7 +32,7 @@
 #define USER_GPIO_FACTORY 			(10)				/* factory mode gpio */ 
 
 #define FACTORY_PARAM_ADDR      	(0x64000) 			/* pactory's parameters address with 400k bytes offset */
-#define USER_PARAM_ADDR 			(0x69000)			/* user's parameters address with 420k bytes offset */
+#define USER_PARAM_ADDR 			(0x65000)			/* user's parameters address with 420k bytes offset */
 
 #define DEFAULT_REMOTE_COMM_PORT  	(8101)
 #define DEFAULT_REMOTE_COMM_IP 		"192.168.0.100"

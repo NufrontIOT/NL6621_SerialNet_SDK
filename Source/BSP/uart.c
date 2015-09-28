@@ -177,7 +177,6 @@ VOID BSP_UartISR(VOID)
                 break;
                 
             case UART_IIR_RDA :                             // -- received data avaliable
-                Dummy = NST_RD_UART_REG(RBR_OFFSET);    // read receive buffer register & clear interrupt
                 //TODO:
                 //for UART interrupt test, print data, should be delete after test
                 for(i=0;i<14;i++){
@@ -187,13 +186,10 @@ VOID BSP_UartISR(VOID)
                 break;
                 
             case UART_IIR_CTI :                           // -- character timeout. we must read receiver buffer register to clear this inerrupt 
-                do{
-				    LSRValue = NST_RD_UART_REG(LSR_OFFSET);
-				    if ( LSR_DR_GET(LSRValue) )               // -- indicate receiver data ready
-	                {          
-	                    Dummy = NST_RD_UART_REG(RBR_OFFSET);
-						uart_data_recv(Dummy);	   /* SerialNet mode process interface */
-	                }		
+                do{				       
+	                Dummy = NST_RD_UART_REG(RBR_OFFSET);
+					uart_data_recv(Dummy);	   /* SerialNet mode process interface */
+					LSRValue = NST_RD_UART_REG(LSR_OFFSET);		
 				}while(LSR_DR_GET(LSRValue));
                 break;
 				
