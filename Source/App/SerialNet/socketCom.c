@@ -61,17 +61,15 @@ void UDPSendTask(unsigned char type)
 		OSTimeDly(100);	
 	}
 
-	if (type == SOCK_CLIENT) {
-		memcpy(&local_addr, &WifiConnStatus.server_addr, sizeof(struct sockaddr_in));
-				
-	} else if (type == SOCK_SERVER) {
-		memcpy(&local_addr, &WifiConnStatus.client_addr, sizeof(struct sockaddr_in));
-	}
-
 	while (1) {
 		if (UserParam.atMode == DATA_MODE) {	
 			if (WifiConnStatus.sockfd != -1) {
-			
+				if (type == SOCK_CLIENT) {
+					memcpy(&local_addr, &WifiConnStatus.server_addr, sizeof(struct sockaddr_in));
+							
+				} else if (type == SOCK_SERVER) {
+					memcpy(&local_addr, &WifiConnStatus.client_addr, sizeof(struct sockaddr_in));
+				}			
 				if (net_sendStart == 1) {
 #if UDP_ONEFRAME_SEND_SWITCH
 					data_len = net_send_len;
