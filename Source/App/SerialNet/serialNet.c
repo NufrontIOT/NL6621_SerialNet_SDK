@@ -1,59 +1,28 @@
-/*
- * =====================================================================================
- *
- *       Filename:  serialNet.c
- *
- *    Description:  The entry of serialnet modle. init serialnet resource and create
- *              process task thread.
- *
- *        Version:  0.01.1
- *        Created:  11/11/2014 12:57:35 AM
- *       Revision:  none
- *
- *         Author:  Lin Hui (Link), hui.lin@nufront.com
- *   Organization:  Guangdong Nufront CSC Co., Ltd
- *
- *--------------------------------------------------------------------------------------          
- * ChangLog:
- *  version    Author      Date        Purpose
- *  0.01.01     Lin Hui    11/11/2014   Create and initialize it.   
- *  0.01.02     Lin Hui    10/12/2014   Fix the bug in internal release SerialNet 0.01.02 
- *     
- * =====================================================================================
- */
 
-#include "serialNet.h"
 #include "common.h"
-
-UINT8 	uart_recvEnd = 0;
-UINT32	uart_rec_len = 0;
-char 	uart_rec_data[MAX_RECV_BUFFER_SIZE + 1];
-UINT8 	net_sendStart = 0;
-UINT32	net_send_len = 0;
-char 	net_send_data[MAX_RECV_BUFFER_SIZE + 1];
-UINT8 	uart_sendStart = 0;				
-UINT8	uart_hasData = 0;						/*0: 无数据发送 1:接收到数据 */
-char 	uart_send_data[MAX_RECV_BUFFER_SIZE + 1];
-UINT32	uart_send_len = 0;
-UINT8	end_sendFlags = 0;
-NST_TIMER *pTimer = NULL;
-BOOL_T   isCancelled = OS_FALSE;
-UINT8    ScanFlag;
-
-
+#include "serialNet.h"
+#include "nl6621_uart.h"
+#include "ring_buffer.h"
 
 SYS_EVT_ID link_status;
-UINT8 smtconfigBegin;
-
-UINT32 g_RecvBufSize = DEF_RECV_BUFFER_SIZE;
 
 /* User's param */
 USER_CFG_PARAM UserParam;
 USER_CFG_PARAM FactoryParam;
 
-OS_EVENT *modeSwitchSem;  	/* command and data mode switch semaphore. */
-OS_EVENT *uartMessgSem;  	/* Uart error message print sem */
+OS_EVENT *sendSwitchSem;
+OS_EVENT * modeSwitchSem;
 
+BOOL_T   isCancelled = OS_FALSE;
+
+UINT8    ScanFlag;
+UINT8 smtconfigBegin;
+UINT8 	net_sendStart = 0;
+//NST_TIMER *Send_Timer = NULL;
+extern at_stateType  at_state;
+extern UINT8 end_sendFlags;
+extern ring_buffer_t uartrxbuf;
+extern UINT8 uart_send_flag;
 
 /***************************************************************************/
 /************** factory and user's parameters save interface ***************/
@@ -260,13 +229,13 @@ VOID InitFactoryParam(VOID)
  */
  void Init_SeriaNet(void)
 {
-	//UserParam.atMode = DATA_MODE;
-	
-	uart_recvEnd = 0;	
-    uart_rec_len = 0;
-    net_sendStart = 0;
-    net_send_len = 0;
-
+//	UserParam.atMode = DATA_MODE;
+//	
+//	uart_recvEnd = 0;	
+//    uart_rec_len = 0;
+//    net_sendStart = 0;
+//    net_send_len = 0;
+//
     /* start to create TCP/UDP connect socket */
     memset(&WifiConnStatus, 0, sizeof(WifiConnStatus));
     WifiConnStatus.connStatus = CONNECT_STATUS_FAIL;
@@ -297,14 +266,13 @@ VOID LoadUserParam(VOID)
 	/* get the system param from user mode */
 	memcpy(&SysParam, &UserParam.cfg, sizeof(CFG_PARAM));
 
-	g_RecvBufSize = UserParam.frameLength;
 	if ((UserParam.frameLength < MIN_RECV_BUFFER_SIZE)) {
-		g_RecvBufSize = MIN_RECV_BUFFER_SIZE;
+		UserParam.frameLength = MIN_RECV_BUFFER_SIZE;
 
 	} else if ((UserParam.frameLength > MAX_RECV_BUFFER_SIZE)) {
-		g_RecvBufSize = MAX_RECV_BUFFER_SIZE;
+		UserParam.frameLength = MAX_RECV_BUFFER_SIZE;
 	}
-	FactoryParam.frameLength = (g_RecvBufSize & 0xffff);
+	FactoryParam.frameLength = (UserParam.frameLength & 0xffff);
 }		/* -----  end of function LoadUserParam  ----- */
 
 
@@ -320,7 +288,16 @@ VOID UserGpioInit(VOID)
 	/* set indicator LED to low level */     
 	BSP_GPIOPinMux(USER_GPIO_IDX_LED);	     
 	BSP_GPIOSetDir(USER_GPIO_IDX_LED, GPIO_DIRECTION_OUTPUT);      
-	BSP_GPIOSetValue(USER_GPIO_IDX_LED, GPIO_LOW_LEVEL);	 
+	BSP_GPIOSetValue(USER_GPIO_IDX_LED, GPIO_LOW_LEVEL);
+	
+	
+	BSP_GPIOPinMux(UART_RTS);	     
+	BSP_GPIOSetDir(UART_RTS, GPIO_DIRECTION_OUTPUT);      
+	BSP_GPIOSetValue(UART_RTS, GPIO_HIGH_LEVEL);
+	
+	BSP_GPIOPinMux(UART_CTS);	     
+	BSP_GPIOSetDir(UART_CTS, GPIO_DIRECTION_OUTPUT);      
+	BSP_GPIOSetValue(UART_CTS, GPIO_LOW_LEVEL);	 
 	
 	/* factory gpio is valied when set to low level */
 	BSP_GPIOPinMux(USER_GPIO_FACTORY);  
@@ -339,14 +316,7 @@ VOID GlobalInit(VOID)
 	UserGpioInit();
 
 	link_status = SYS_EVT_LINK_DOWN;
-				   	
-	uart_recvEnd = 0;
-	uart_rec_len = 0;
-	net_sendStart = 0;
-	net_send_len = 0;
-
-	memset(uart_rec_data, '\0', MAX_RECV_BUFFER_SIZE);
-	memset(net_send_data, '\0', MAX_RECV_BUFFER_SIZE);
+				   		
 }		/* -----  end of function GlobalInit  ----- */
 
 
@@ -417,68 +387,17 @@ int init_default_data(void)
 }		/* -----  end of function init_default_data  ----- */
 
 
-/* 
- * ===  FUNCTION  ======================================================================
- *         Name:  TestSerialToWifi
- *  Description:  The entry of serialnet module, it will create the uart and wifi net task.
- *              after that it will be polled to reflash led in AT mode, or light on 
- *              indicator LED then wait to switch to AT mode when receive "+++" from uart
- *              in data mode.
- *         Note:
- * =====================================================================================
- */
-int TestSerialToWifi(void)
+/*
+ * timer for copying data from uart send buffer to net buffer. 
+ **/
+void timerFuncProcess(VOID)
 {
-	UINT8 Err;
-	UINT8 prioUser = TCPIP_THREAD_PRIO + 2;		  
-
-	/* create sem viable */
-	modeSwitchSem = OSSemCreate(0);
-
-	sys_thread_new("UartRecvThread", UartRecvThread, NULL, NST_TEST_APP_TASK_STK_SIZE, prioUser++);//3
-	sys_thread_new("UartSendThread", UartSendThread, NULL, NST_TEST_APP_TASK_STK_SIZE, prioUser++);//4	
-	sys_thread_new("AtThread", AtThread, NULL, NST_TEST_APP_TASK_STK_SIZE, prioUser++);//5
-
-	/* create UDP/TCP send and receive process task thread */
-	sys_thread_new("SendThread", SendThread, NULL, NST_TEST_APP_TASK_STK_SIZE, prioUser++);//6
-	sys_thread_new("RecvThread", RecvThread, NULL, NST_TEST_APP_TASK_STK_SIZE, prioUser++);//7
-
-	/* UDP broadcast receive task thread. */
-	sys_thread_new("BCTRecvThread", BCTRecvThread, NULL, NST_TEST_APP_TASK_STK_SIZE, prioUser++);//8
-
-	while (1) {    			/* Task body, always written as an infinite loop. */
-    	if (UserParam.atMode == 0) {	/* normal led flash */
-			OSTimeDly(100);
-			BSP_GPIOSetValue(USER_GPIO_IDX_LED, GPIO_LOW_LEVEL);
-			OSTimeDly(100);	
-			BSP_GPIOSetValue(USER_GPIO_IDX_LED, GPIO_HIGH_LEVEL);
-			
-		} else if (UserParam.atMode == 1) {						/* serialnet led flash */
-			BSP_GPIOSetValue(USER_GPIO_IDX_LED, GPIO_LOW_LEVEL);	
-			OSSemPend(modeSwitchSem, 0, &Err);
-
-			/* delay 100ms, make sure "+++" string is sand as one frame */
-			OSTimeDly(10); 	
-	
-			if ((uart_rec_len <= 5)) {	
-				uart_rec_data[3] = '\0';
-				if (strcmp(uart_rec_data, "+++") == 0) {
-					/* clear data mode */								
-					uart_recvEnd = 0;	
-					uart_rec_len = 0;	
-					net_sendStart = 0;
-					net_send_len = 0;
-					UserParam.atMode = AT_MODE;
-					
-					printf("+OK:CMDMODE\n");
-				}
-			}
-		}
-    }
-}		/* -----  end of function TestSerialToWifi  ----- */
-
-
-
+	OSSemPost(sendSwitchSem);
+	if(uart_send_flag != UART_STOP)
+	{
+		*Tmr0Ctl = (TMR_INT_MASK);
+	}	
+}
 
 /* ************************************************************************ */
 /* ********************* External called interface  *********************** */
@@ -514,5 +433,66 @@ void ResponseSmartconfig(void)
 
 
 
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:  TestSerialToWifi
+ *  Description:  The entry of serialnet module, it will create the uart and wifi net task.
+ *              after that it will be polled to reflash led in AT mode, or light on 
+ *              indicator LED then wait to switch to AT mode when receive "+++" from uart
+ *              in data mode.
+ *         Note:
+ * =====================================================================================
+ */
+void TestSerialToWifi(void * pParam)
+{
+	UINT8 Err;
 
+	unsigned char prioUser = TCPIP_THREAD_PRIO + 2;
+	
+	/* create sem viable */
+	modeSwitchSem = OSSemCreate(0);
+	sendSwitchSem = OSSemCreate(0);
+
+//	NST_InitTimer(&Send_Timer, timerFuncProcess, NULL, NST_TRUE);
+
+	/* create UDP/TCP send and receive process task thread */
+	sys_thread_new("SendThread", SendThread, NULL, NST_TEST_APP_TASK_STK_SIZE, prioUser++);
+	sys_thread_new("RecvThread", RecvThread, NULL, NST_TEST_APP_TASK_STK_SIZE, prioUser++);
+
+	/* UDP broadcast receive task thread. */
+	sys_thread_new("BCTRecvThread", BCTRecvThread, NULL, NST_TEST_APP_TASK_STK_SIZE, prioUser++);
+
+	sys_thread_new("AtThread", AtThread, NULL, NST_TEST_APP_TASK_STK_SIZE, prioUser++);	
+
+
+	while (1) {    			/* Task body, always written as an infinite loop. */
+    	if (UserParam.atMode == AT_MODE) {	/* normal led flash */
+			OSTimeDly(100);
+			BSP_GPIOSetValue(USER_GPIO_IDX_LED, GPIO_LOW_LEVEL);
+			OSTimeDly(100);	
+			BSP_GPIOSetValue(USER_GPIO_IDX_LED, GPIO_HIGH_LEVEL);
+			
+		} else if (UserParam.atMode == DATA_MODE) {						/* serialnet led flash */
+			BSP_GPIOSetValue(USER_GPIO_IDX_LED, GPIO_LOW_LEVEL);	
+			OSSemPend(modeSwitchSem, 0, &Err);
+
+			/* delay 1s, make sure "+++" string is sand as one frame */
+			OSTimeDly(100);
+			
+			if(end_sendFlags == END_SEND_TRUE){
+
+				printf("+OK:CMDMODE\n");
+				end_sendFlags = END_SEND_FALSE;
+				net_sendStart = 0;
+				UserParam.atMode = AT_MODE;
+				ring_buf_clear(&uartrxbuf);
+				OSSemPost(sendSwitchSem); 
+				at_state = at_statIdle;
+				
+			}else if(end_sendFlags == END_SEND_FALSE){
+				continue;
+			} 	
+		}
+    }
+}		/* -----  end of function TestSerialToWifi  ----- */
 

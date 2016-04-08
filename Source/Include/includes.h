@@ -19,9 +19,5 @@
 #include    "param.h"
 #include    "lwip.h"
 
-#ifdef TEST_SERIAL_TO_WIFI
-#include 	"../App/SerialNet/serialNet.h"
-#include 	"../App/SerialNet/common.h"		   
-#endif
-
+#include "serialNet.h"
 #endif /*INCLUDES_H_*/

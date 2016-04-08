@@ -1,124 +1,72 @@
 
 
 #include "socketCom.h"
+#include "ring_buffer.h"
+#include "sockets.h"
 
 extern SYS_EVT_ID link_status;
+extern ring_buffer_t uartrxbuf;
+extern UINT8 	net_sendStart;
+extern UINT8 uart_send_flag;
+extern NST_LOCK * recv_lock;	/* receive lock */
 
 /* wifi connect status struct */
 CONN_STATUS WifiConnStatus;
 
-VOID FormatPrintf(int len)
-{
-	int i = 0;
+char send_buf[g_SendBufSize];
 
-	for(i = 0; i < len; i++)
-	{
-		//printf("%c",uart_send_data[i]);
-		BSP_UartPutcPolled(uart_send_data[i]);
-	}
-
-}
-
-/*
- * When network data comming, start to send data to uart, 
- * limitation: uart buffer is less than 2k.
- **/
-VOID UartSendThread(VOID *arg)
-{
-	while (1) {
-		if (UserParam.atMode == DATA_MODE) {	
-			if(uart_sendStart == 0 && uart_hasData == 1) {
-				uart_sendStart = 1;
-
-				FormatPrintf(uart_send_len);
-//				printf(uart_send_data);
-				uart_sendStart = 0;
-				uart_hasData = 0;
-			} else {
-				OSTimeDly(1);
-			}
-		} else {
-			OSTimeDly(100);
-		}
-	}
-}
-
-#define UDP_ONEFRAME_SEND_SWITCH		(1)
+lanserver ls;
 
 void UDPSendTask(unsigned char type)
 {	
 	int sendcount;
 	struct sockaddr_in local_addr;
 	char *pdata;
+	int Err;
 
-#if UDP_ONEFRAME_SEND_SWITCH
 	UINT32	data_len = 0;
-//	UINT32	send_fail_cnt = 0;
-//    OS_CPU_SR  cpu_sr;
-#endif
 
-	while (WifiConnStatus.connStatus == CONNECT_STATUS_FAIL) {
-		OSTimeDly(100);	
-	}
+//	while  {
+//		OSTimeDly(100);	
+//	}
 
 	while (1) {
-		if (UserParam.atMode == DATA_MODE) {	
-			if (WifiConnStatus.sockfd != -1) {
+		if (UserParam.atMode == DATA_MODE) {
+				if(WifiConnStatus.connStatus == CONNECT_STATUS_FAIL){
+					OSTimeDly(20);		
+					continue;		
+				}
+
+			
 				if (type == SOCK_CLIENT) {
 					memcpy(&local_addr, &WifiConnStatus.server_addr, sizeof(struct sockaddr_in));
 							
 				} else if (type == SOCK_SERVER) {
 					memcpy(&local_addr, &WifiConnStatus.client_addr, sizeof(struct sockaddr_in));
-				}			
-				if (net_sendStart == 1) {
-#if UDP_ONEFRAME_SEND_SWITCH
-					data_len = net_send_len;
-					pdata = net_send_data;
-					
-					/* close system interrupt until send data finish */
-					//OS_ENTER_CRITICAL();	
-					
-					/* send data to network as every frame user's set in "AT+UARTFL" */
-					while (data_len > 0) {
-						sendcount = sendto(WifiConnStatus.sockfd, pdata, 
-							(data_len > UserParam.frameLength ? UserParam.frameLength : data_len), 
-							0, (struct sockaddr *)&local_addr, sizeof(struct sockaddr));
-						if (sendcount < 0) {
-								continue;							
-						} else {
-							pdata+= sendcount;
-							data_len -= sendcount;
-						}
-					}
-
-					//OS_EXIT_CRITICAL();
-#else
-					sendcount = sendto(WifiConnStatus.sockfd, net_send_data, net_send_len, 
-						0, (struct sockaddr *)&local_addr, sizeof(struct sockaddr));
-					if (sendcount < 0) {
-						printf("+ERROR= %d\n\r", INVALID_SEND);
-					}	
-#endif
-					net_sendStart = 0;
-					net_send_len = 0;
-				} else {
-					OSTimeDly(3);
 				}
-			} else {
-				net_sendStart = 0;
-				net_send_len = 0;
-				uart_recvEnd = 0;
-				uart_rec_len = 0;
-				OSTimeDly(10);
-				break;
-			} 
-		} else {
-			if (WifiConnStatus.sockfd >= 0) {
-				lwip_close(WifiConnStatus.sockfd);
-				WifiConnStatus.sockfd = -1;
+				
+				OSSemPend(sendSwitchSem, 0, &Err);
+				data_len = ring_buf_cnt(&uartrxbuf);
+				
+				if(data_len == 0){
+					continue;
+				}else if(data_len <= g_SendBufSize){
+	
+					data_len = ring_buf_read(&uartrxbuf, send_buf,data_len);						
+				}else{
+					data_len = ring_buf_read(&uartrxbuf, send_buf,g_SendBufSize);
+				}
+
+				net_sendStart = SEND_DONE;
+							
+				sendcount = sendto(WifiConnStatus.sockfd, send_buf, data_len, 0, (struct sockaddr *)&local_addr, sizeof(struct sockaddr));
+				if (sendcount < 0) {
+					continue;							
+				}
+			}else{
+				
+				return;
 			}
-			break;
-		}
 	}
 }
 
@@ -127,14 +75,12 @@ void UDPRecvTask(unsigned char type)
 	int ret;
 	int bytes_read;
 	int count = 0;
-	struct timeval timeout;	
+	int i = 0;
+	int timeout = 3;	
     
 	u32_t addr_len = sizeof(struct sockaddr);
 	char *recv_data;
 	recv_data = OSMMalloc(g_RecvBufSize);
-
-	timeout.tv_sec = 3;   /* receive data timeout: 3 seconds */
-    timeout.tv_usec = 0;
 
 	/* create socket : type is SOCK_DGRAM, UDP */
 	if ((WifiConnStatus.sockfd = socket(AF_INET, SOCK_DGRAM, 0)) == -1) {
@@ -164,16 +110,16 @@ void UDPRecvTask(unsigned char type)
 		WifiConnStatus.server_addr.sin_addr.s_addr = INADDR_ANY;
 		memset(&(WifiConnStatus.server_addr.sin_zero), 0, sizeof(WifiConnStatus.server_addr.sin_zero));	
 
-		ret = setsockopt(WifiConnStatus.sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-		if (ret == -1) {
-		   	printf("+ERROR= %d\n\r", INVALID_TCP_SETOPT);
-		}
-
 		/* bing server */
 		if (bind(WifiConnStatus.sockfd, (struct sockaddr *)&WifiConnStatus.server_addr,
 			   sizeof(struct sockaddr)) == -1) {
 			printf("+ERROR= %d\n\r", INVALID_BIND);
 			goto END;
+		}
+		
+		ret = setsockopt(WifiConnStatus.sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+		if (ret == -1) {
+		   	printf("+ERROR= %d\n\r", INVALID_TCP_SETOPT);
 		}	
 	}
 
@@ -184,18 +130,12 @@ void UDPRecvTask(unsigned char type)
 		if (UserParam.atMode == DATA_MODE) {
 
 			if (WifiConnStatus.sockfd != -1) {
+
 				bytes_read = recvfrom(WifiConnStatus.sockfd, recv_data, g_RecvBufSize, 0,
 			                         (struct sockaddr *)&WifiConnStatus.client_addr, &addr_len);
-				if (bytes_read <= 0) {
-					/* When device switch to AT mode, return this interface. */
-					if (UserParam.atMode == AT_MODE) {					
-						if (WifiConnStatus.sockfd >= 0) {
-							lwip_close(WifiConnStatus.sockfd);
-							WifiConnStatus.sockfd = -1;
-						}
-						goto END;					
-					}
 
+
+				if (bytes_read <= 0) {
 					continue;
 				}
 				
@@ -207,35 +147,24 @@ void UDPRecvTask(unsigned char type)
 					count++;
 				}
 	
-				recv_data[bytes_read] = '\0';
-				while (1) {
-					if (uart_sendStart == 0 && uart_hasData == 0) {
-						memcpy((INT8U *)uart_send_data, (INT8U *)recv_data, bytes_read);
-						uart_send_len = bytes_read;
-						uart_hasData = 1;
-						break;
-					} else {
-						OSTimeDly(1);
-					}
+				i = 0;
+				while(i < bytes_read)
+				{
+					BSP_UartPutcPolled(*(recv_data+i));
+					i++;	
+				}
+
+				memset(recv_data, 0, g_RecvBufSize);
+				//OSTimeDly(10);
 				} 
-			} else {
-				break;
+		}else if(UserParam.atMode == AT_MODE){
+				goto END;
 			}
-		} else {
-			if (WifiConnStatus.sockfd >= 0) {
-				lwip_close(WifiConnStatus.sockfd);
-				WifiConnStatus.sockfd = -1;
-			}
-			break;
-		}
 	}
+	
 
 END:
 	WifiConnStatus.connStatus = CONNECT_STATUS_FAIL;
-	uart_recvEnd = 0;	
-	uart_rec_len = 0;
-	net_sendStart = 0;
-	net_send_len = 0;
 
 	if(WifiConnStatus.sockfd >= 0)
 	{
@@ -251,9 +180,11 @@ END:
 
 void TCPSendTask(unsigned char type)
 {
-	int snd;
+	int snd, i;
 	int socketFd = -1;
 	UINT8  FailCnt = 0;
+	UINT32	data_len = 0;
+	int Err;
 
 
 #if TCP_ONEFRAME_SEND_SWITCH
@@ -263,105 +194,297 @@ void TCPSendTask(unsigned char type)
 	UINT32	send_fail_cnt = 0;
 #endif
 
-//	memset(net_send_data, '\0', g_RecvBufSize);
-
-	while (WifiConnStatus.connStatus == CONNECT_STATUS_FAIL) {
-		OSTimeDly(100);	
-	}
-	
-
-	if (type == SOCK_CLIENT) {
-		socketFd = WifiConnStatus.sockfd;
-	} else if (type == SOCK_SERVER) {
-		socketFd = WifiConnStatus.connectFd;
-	}
-	
+		
 	while (1) {
 		if (UserParam.atMode == DATA_MODE) {
-			if (socketFd != -1) {
 
-				if(WifiConnStatus.connStatus == CONNECT_STATUS_FAIL){
-					printf("+ERROR= %d\n\r", INVALID_TCP_CONNECT);
-					OSTimeDly(100);
-					return;
-				}
+			if(WifiConnStatus.sockfd < 0 && Get_MaxFd() <= 0){
+				OSTimeDly(20);		
+				continue;		
+			}
 
-			  	if (net_sendStart == 1) {
-#if TCP_ONEFRAME_SEND_SWITCH
-					data_len = net_send_len;
-					pdata = net_send_data;
-					
-					/* close system interrupt until send data finish */
-					//OS_ENTER_CRITICAL();	
-					
-					/* send data to network as every frame user's set in "AT+UARTFL" */
-					while (data_len > 0) {
-						sendcount = send(socketFd, pdata, 
-							(data_len > UserParam.frameLength ? UserParam.frameLength : data_len), 0);
+			OSSemPend(sendSwitchSem, 0, &Err);
+
+			NST_AQUIRE_LOCK(recv_lock);
+			data_len = ring_buf_cnt(&uartrxbuf);
+			
+			if(data_len == 0){
+				continue;
+			}else if(data_len <= g_SendBufSize){
+
+				data_len = ring_buf_read(&uartrxbuf, send_buf,data_len);						
+			}else{
+				data_len = ring_buf_read(&uartrxbuf, send_buf,g_SendBufSize);
+			}
+			NST_RELEASE_LOCK(recv_lock);
+			
+			net_sendStart = SEND_DONE;
+
+			if(type == SOCK_SERVER)
+			{
+				for(i = 0;i < LAN_TCPCLIENT_MAX; i++)
+				{
+					if(ls.tcpClient[i].fd >= 0)
+					{		
+						snd = send(ls.tcpClient[i].fd, send_buf, data_len, 0);
 						
-						if(UserParam.atMode != DATA_MODE){
-								return;
-						}
-							
-						if (sendcount < 0) {
-							printf("+ERROR= %d\n\r", INVALID_SEND);
-							send_fail_cnt++;
+						if (snd < 0) {
+							while(1)
+							{
+								if(UserParam.atMode == AT_MODE || Get_MaxFd() <= 0)
+								{
+									ring_buf_clear(&uartrxbuf);
+										
+									if(uart_send_flag == UART_STOP)
+									{
+										uart_send_flag = UART_START;
+										BSP_GPIOSetValue(UART_RTS, GPIO_HIGH_LEVEL);
+									}
 
-							/* if send data error more than 5 times, start send task again */
-							if (send_fail_cnt >= 5) {
-								net_sendStart = 0;
-								net_send_len = 0;
-								//OS_EXIT_CRITICAL();
-								return;							
+									return;
+								}
+
+								OSTimeDly(5);
+								snd = send(ls.tcpClient[i].fd, send_buf, data_len, 0);
+
+								if(snd > 0){
+									if(uart_send_flag == UART_STOP)
+									{
+										uart_send_flag = UART_START;
+										BSP_GPIOSetValue(UART_RTS, GPIO_HIGH_LEVEL);
+									}
+									break;
+								}
+
 							}
-						} else {
-							pdata+=sendcount;
-							data_len -= sendcount;
+					    } else {
+							if(uart_send_flag == UART_STOP)
+							{
+								uart_send_flag = UART_START;
+								BSP_GPIOSetValue(UART_RTS, GPIO_HIGH_LEVEL);
+							}
 						}
 					}
+				}
 
-					//OS_EXIT_CRITICAL();
-#else
-					snd = send(socketFd, net_send_data, net_send_len, 0);
-					if (snd < 0) {
-						printf("+ERROR= %d\n\r", INVALID_SEND);
-						OSTimeDly(10);                
-						FailCnt++;
-
-						if(FailCnt == 10)
+			}else if(type == SOCK_CLIENT)
+			{
+				snd = send(WifiConnStatus.sockfd, send_buf, data_len, 0);
+				if (snd < 0) {
+					while(1)
+					{
+						if(UserParam.atMode == AT_MODE || WifiConnStatus.sockfd < 0)
 						{
-							net_sendStart = 0;
-							net_send_len = 0;
-							uart_recvEnd = 0;
-							uart_rec_len = 0;
-							
-							WifiConnStatus.connStatus = CONNECT_STATUS_FAIL;
-							return;	
-						}
-				    } else {
-						FailCnt = 0;
-					}			
-#endif
-					net_sendStart = 0;						
-					net_send_len = 0;
-				} else {
-			  		OSTimeDly(1);
-			  	}
-			} else {
-				net_sendStart = 0;
-				net_send_len = 0;
-				uart_recvEnd = 0;
-				uart_rec_len = 0;
-				OSTimeDly(10);
-				return;
+							ring_buf_clear(&uartrxbuf);
 								
+							if(uart_send_flag == UART_STOP)
+							{
+								uart_send_flag = UART_START;
+								BSP_GPIOSetValue(UART_RTS, GPIO_HIGH_LEVEL);
+							}
+
+							return;
+						}
+
+						OSTimeDly(5);
+						snd = send(WifiConnStatus.sockfd, send_buf, data_len, 0);
+
+						if(snd > 0){
+							if(uart_send_flag == UART_STOP)
+							{
+								uart_send_flag = UART_START;
+								BSP_GPIOSetValue(UART_RTS, GPIO_HIGH_LEVEL);
+							}
+							break;
+						}
+
+					}
+			    } else {
+					if(uart_send_flag == UART_STOP)
+					{
+						uart_send_flag = UART_START;
+						BSP_GPIOSetValue(UART_RTS, GPIO_HIGH_LEVEL);
+					}
+				}	
 			}
-		} else {	/* command mode */
-			return;
-		}
+												
+		} else {
+	  		return;
+	  	}
+	
+						
 	}
+		
 }
 
+/****************************************************************
+        FunctionName        :   LAN_tcpClientInit.
+        Description         :      init tcp clients.
+        Add by Vshawn     --2015-11-24
+****************************************************************/
+int32 LAN_tcpClientInit(void)
+{
+    int32 i;
+
+    for (i = 0; i < LAN_TCPCLIENT_MAX; i++)
+    {
+        memset(&(ls.tcpClient[i]), 0x0, sizeof(ls.tcpClient[i]));
+        ls.tcpClient[i].fd = -1;
+        ls.tcpClient[i].isLogin = LAN_CLIENT_LOGIN_FAIL;
+        ls.tcpClient[i].timeout = 0;
+    }
+
+    return  0;
+}
+
+void AddSelectFD(void)
+{
+	int32 i = 0;
+	FD_ZERO( &(ls.readfd) );
+	   
+	if(ls.tcpServerFd >= 0 )
+	{
+    	FD_SET(ls.tcpServerFd, &(ls.readfd) );
+	}
+
+	for(i = 0; i < LAN_TCPCLIENT_MAX; i++)
+    {
+        if( ls.tcpClient[i].fd >= 0 )
+        {
+            FD_SET( ls.tcpClient[i].fd, &(ls.readfd) );
+        }
+    }
+}
+
+int32 Get_MaxFd(void)
+{
+	int i;
+	int32 maxfd = 0;
+	
+	if( maxfd <= ls.tcpServerFd )
+    maxfd = ls.tcpServerFd;
+
+	for(i = 0; i < LAN_TCPCLIENT_MAX; i++)
+    {
+        if( ls.tcpClient[i].fd >= 0 )
+        {
+            maxfd = ls.tcpClient[i].fd;
+        }
+    }
+
+	return maxfd;
+}
+
+int32 tcpClient_select(int32 nfds, fd_set *readfds, fd_set *writefds,
+           fd_set *exceptfds,int32 sec,int32 usec )
+{
+    struct timeval t;
+    
+    t.tv_sec = sec;// 秒
+    t.tv_usec = usec;// 微秒
+    return select( nfds,readfds,writefds,exceptfds,&t );
+}
+
+int tcpClient_SelectFd(int32 sec,int32 usec)
+{
+	int32 ret = 0;
+	int32 select_fd = 0;
+	AddSelectFD();
+	select_fd = Get_MaxFd();
+
+	if( select_fd >= 0 )
+    {
+        ret = tcpClient_select(select_fd+1,&(ls.readfd),NULL,NULL,sec,usec );
+        if( ret==0 )
+        { 
+            //Time out.
+        }
+    }
+    return ret;
+}
+
+int32 CreateTcpServer( uint16 tcp_port )
+{
+    struct sockaddr_t addr;
+    int32 bufferSize=0;
+    int32 serversocketid=0;
+	int tmp = 1;
+	struct timeval timeout;
+
+	int keepAlive = 1; // 开启keepalive属性
+	int keepIdle = 30; // 如该连接在30秒内没有任何数据往来,则进行探测 
+	int keepInterval = 5; // 探测时发包的时间间隔为5 秒
+	int keepCount = 3; // 探测尝试的次数.如果第1次探测包就收到响应了,则后2次的不再发.
+
+	timeout.tv_sec = 3;   /* receive data timeout: 3 seconds */
+    timeout.tv_usec = 0; 
+
+    serversocketid = socket( AF_INET, SOCK_STREAM, IPPROTO_TCP );
+    if( serversocketid < 0 )
+    {
+        serversocketid = INVALID_SOCKET;
+        printf("TCPServer socket create error\n\r");
+        return 1;
+    }
+    bufferSize = SOCKET_TCPSOCKET_BUFFERSIZE;
+//    setsockopt( serversocketid, SOL_SOCKET, SO_RCVBUF, &bufferSize, 4 );
+//    setsockopt( serversocketid, SOL_SOCKET, SO_SNDBUF, &bufferSize, 4 );
+//	setsockopt( serversocketid, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+	setsockopt( serversocketid, SOL_SOCKET, SO_KEEPALIVE, (void *)&keepAlive, sizeof(keepAlive));
+	setsockopt( serversocketid, IPPROTO_TCP, TCP_KEEPIDLE, (void*)&keepIdle, sizeof(keepIdle));
+	setsockopt( serversocketid, IPPROTO_TCP, TCP_KEEPINTVL, (void *)&keepInterval, sizeof(keepInterval));
+	setsockopt( serversocketid, IPPROTO_TCP, TCP_KEEPCNT, (void *)&keepCount, sizeof(keepCount));
+	setsockopt( serversocketid, SOL_SOCKET, SO_REUSEADDR, &tmp, sizeof(tmp));
+
+    memset(&addr, 0x0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(tcp_port);
+    addr.sin_addr.s_addr = INADDR_ANY;
+    if( bind( serversocketid, (struct sockaddr *)&addr, sizeof(addr)) != 0 )
+    {
+        printf("TCPSrever socket bind error\n\r");
+        close(serversocketid);
+        serversocketid = INVALID_SOCKET;
+        return 1;
+    }
+
+    if(listen( serversocketid, LAN_TCPCLIENT_MAX ) != 0 )
+    {
+        printf("TCPServer socket listen error!\n\r");
+        close( serversocketid );
+        serversocketid = INVALID_SOCKET;
+        return 1;
+    }
+	printf("TCP Server socketid:%d on port:%d\n\r", serversocketid, tcp_port);
+    return serversocketid;
+
+}
+
+int32 AddTcpNewClient(int fd, struct sockaddr_t *addr)
+{
+    int32 i;
+    
+    if(fd < 0)
+    {
+        return 1;
+    }
+
+    for(i = 0; i < LAN_TCPCLIENT_MAX; i++)
+    {
+        if(ls.tcpClient[i].fd == INVALID_SOCKET)
+        {
+            ls.tcpClient[i].fd = fd;
+            //Lan_setClientTimeOut(pgc, i);
+
+            return 0;
+        }
+    }
+
+    printf("[LAN]tcp client over %d channel, denied!", LAN_TCPCLIENT_MAX);
+    close(fd);
+    
+    return 1;
+}
 
 void TCPRecvTask(unsigned char type)
 {
@@ -369,19 +492,15 @@ void TCPRecvTask(unsigned char type)
 	fd_set fdR;
 	int select_ret;
 
-	int ret;
+	int ret, i = 0, j = 0;
 	int tmp = 1;
 	int bytes_read;
 	char *recv_data;
 	struct timeval timeout;
-
-	int keepAlive = 1; // 开启keepalive属性
-	int keepIdle = 30; // 如该连接在30秒内没有任何数据往来,则进行探测 
-	int keepInterval = 5; // 探测时发包的时间间隔为5 秒
-	int keepCount = 3; // 探测尝试的次数.如果第1次探测包就收到响应了,则后2次的不再发.
 	
 	u32_t sin_size = sizeof(struct sockaddr_in);
 	recv_data = OSMMalloc(g_RecvBufSize);
+	memset(recv_data, 0, g_RecvBufSize);
 
 	timeout.tv_sec = 3;   /* receive data timeout: 3 seconds */
     timeout.tv_usec = 0; 
@@ -390,30 +509,23 @@ void TCPRecvTask(unsigned char type)
 	/* Create socket and connect to server */
 	while (1) {	
 		if (UserParam.atMode == DATA_MODE) {
-			if (WifiConnStatus.sockfd >= 0) {
-				lwip_close(WifiConnStatus.sockfd);
-				WifiConnStatus.sockfd = -1;
-			}
-			OSTimeDly(30);
-
-			/* create socket:type is SOCK_STREAM, TCP */
-			if ((WifiConnStatus.sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-			   printf("+ERROR= %d\n\r", INVALID_TCP_SOCKET);
-			   goto END;
-			}
-		
+				
 			if (type == SOCK_CLIENT) {
+				int	nfds;
+
+				/* create socket:type is SOCK_STREAM, TCP Client */
+				if ((WifiConnStatus.sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
+				   printf("+ERROR= %d\n\r", INVALID_TCP_SOCKET);
+				   goto END;
+				}
+
 			    memset(&(WifiConnStatus.server_addr), 0, sizeof(WifiConnStatus.server_addr));
 			    WifiConnStatus.server_addr.sin_family = AF_INET;
 			    WifiConnStatus.server_addr.sin_port = htons(WifiConnStatus.socketPort);
 			    WifiConnStatus.server_addr.sin_addr.s_addr = WifiConnStatus.remoteIp;
 			    memset(&(WifiConnStatus.server_addr.sin_zero), 0, sizeof(WifiConnStatus.server_addr.sin_zero));
 
-				ret = setsockopt(WifiConnStatus.sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-				//ret = setsockopt(WifiConnStatus.sockfd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
-				if (ret == -1) {
-				   	printf("+ERROR= %d\n\r", INVALID_TCP_SETOPT);
-				}
+				setsockopt(WifiConnStatus.sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
 				printf("TCP client connecting on port %d...\n", WifiConnStatus.socketPort);
 					
@@ -421,170 +533,128 @@ void TCPRecvTask(unsigned char type)
 				        sizeof(struct sockaddr)) == -1)	{
 					printf("+ERROR= %d\n\r", INVALID_TCP_CONNECT);
 				   	OSTimeDly(100);
-
+					goto END;
 				} else {
-					if(UserParam.atMode != DATA_MODE)
-					break;
 
 				    printf("+OK:Connected Server\n");
-					break;
+					WifiConnStatus.connStatus = CONNECT_STATUS_OK;
+
+					while (1) {
+						if(UserParam.atMode == AT_MODE ||
+							 WifiConnStatus.connStatus == CONNECT_STATUS_FAIL)
+						{
+							 goto END;
+						}
+		
+						bytes_read = recv(WifiConnStatus.sockfd, recv_data, g_RecvBufSize, 0);					
+						if(bytes_read > 0)
+						{
+							j = 0;
+							while(j < bytes_read)
+							{
+								BSP_UartPutcPolled(*(recv_data+j));
+								j++;	
+							}
+
+							memset(recv_data, 0, g_RecvBufSize);
+						}else if(bytes_read == 0){
+							goto END;
+						}
+					}
 				}
-						
+										
 			} else if (type == SOCK_SERVER) {
-	
-				memset(&(WifiConnStatus.server_addr), 0, sizeof(WifiConnStatus.server_addr));
-				WifiConnStatus.server_addr.sin_family = AF_INET;
-				WifiConnStatus.server_addr.sin_port = htons(WifiConnStatus.socketPort);
-				WifiConnStatus.server_addr.sin_addr.s_addr = INADDR_ANY;
-				memset(&(WifiConnStatus.server_addr.sin_zero), 0, sizeof(WifiConnStatus.server_addr.sin_zero));
+				int newfd = -1,ret = -1,fd = -1;
+				struct sockaddr_t addr;
+				int addrLen = sizeof(struct sockaddr_t);
 
-				ret = setsockopt(WifiConnStatus.sockfd, SOL_SOCKET, SO_REUSEADDR, &tmp, sizeof(tmp));
-				if (ret == -1) {
-				   	printf("+ERROR= %d\n\r", INVALID_TCP_SETOPT);
-				}
-		
-				/* bing server */
-				if (bind(WifiConnStatus.sockfd, (struct sockaddr *)&WifiConnStatus.server_addr,
-					   sizeof(struct sockaddr)) == -1) {
-					printf("+ERROR= %d\n\r", INVALID_BIND);
-					OSTimeDly(100);
-					continue;
-				}
-			   			
-			   	if (listen(WifiConnStatus.sockfd, 5) == -1) {
-			       		printf("+ERROR= %d\n\r", INVALID_TCP_LISTEN);
-					OSTimeDly(100);
-			       		continue;
-			   	}
+				LAN_tcpClientInit();
 
-			    timeout.tv_sec = 7;   /* receive data timeout: 7 seconds */
-			    timeout.tv_usec = 0;
-			    FD_ZERO(&fdR);
-			    FD_SET(WifiConnStatus.sockfd, &fdR);
-			    printf("TCP server waiting on port %d...\n", WifiConnStatus.socketPort);
-
-			    switch (select(WifiConnStatus.sockfd + 1, &fdR, NULL, NULL, &timeout)) {
-				    case -1:
-					    select_ret = 1;
-					    printf("error\n\r");
-					    goto END;
-				    case 0:
-					    select_ret = -1;
-					    //                        printf("timeout\n\r");
-					    break;
-				    default:
-					    select_ret = 0;
-					    if (FD_ISSET(WifiConnStatus.sockfd, &fdR)) {
-						    break;
-					    }
-			    }
-			    if (select_ret == -1)   /* timeout */
-				continue;
-
-				WifiConnStatus.connectFd = accept(WifiConnStatus.sockfd, 
-						(struct sockaddr *)&WifiConnStatus.client_addr, &sin_size);
-
-				ret = setsockopt(WifiConnStatus.connectFd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-				if (ret == -1) {
-				   	printf("+ERROR= %d\n\r", INVALID_TCP_SETOPT);
-				}
-
-				ret = setsockopt(WifiConnStatus.connectFd, SOL_SOCKET, SO_KEEPALIVE, (void *)&keepAlive, sizeof(keepAlive));
-				if (ret == -1) {
-				   	printf("+ERROR= %d\n\r", INVALID_TCP_SETOPT);
-				}
-
-				ret = setsockopt(WifiConnStatus.connectFd, IPPROTO_TCP, TCP_KEEPIDLE, (void*)&keepIdle, sizeof(keepIdle));
-				if (ret == -1) {
-				   	printf("+ERROR= %d\n\r", INVALID_TCP_SETOPT);
-				}
-
-				ret = setsockopt(WifiConnStatus.connectFd, IPPROTO_TCP, TCP_KEEPINTVL, (void *)&keepInterval, sizeof(keepInterval));
-				if (ret == -1) {
-				   	printf("+ERROR= %d\n\r", INVALID_TCP_SETOPT);
-				}
-
-				ret = setsockopt(WifiConnStatus.connectFd, IPPROTO_TCP, TCP_KEEPCNT, (void *)&keepCount, sizeof(keepCount));
-				if (ret == -1) {
-				   	printf("+ERROR= %d\n\r", INVALID_TCP_SETOPT);
-				}
 				
-				printf("+OK:DEV Connected\n\r");
-				break;												
-			}					
-			
-		} else {
-			goto END;
-		}
-	}
+				ls.tcpServerFd = CreateTcpServer(WifiConnStatus.socketPort);
 
-	/*
-	 * After socket create, set connect success, resume send task thread.
-	 **/		
-	if (type == SOCK_CLIENT) {
-		socketFd = WifiConnStatus.sockfd;
-	} else if (type == SOCK_SERVER) {
-		socketFd = WifiConnStatus.connectFd;
-	}
-	OSTimeDly(20);
-	WifiConnStatus.connStatus = CONNECT_STATUS_OK;	
-
-	while (1) {
-		if (UserParam.atMode == DATA_MODE) {
-			if (socketFd != -1) {
-
-				if(WifiConnStatus.connStatus == CONNECT_STATUS_FAIL)
+				while(1)
 				{
-					goto END;
-				}
-
-
-				bytes_read = recv(socketFd, recv_data, g_RecvBufSize, 0);					
-				if (bytes_read <= 0) {	
-					/* When device switch to AT mode, return this interface. */
-					if (UserParam.atMode == AT_MODE) {					
-						//printf("+ERROR= %d\n\r", INVALID_RECV);
-						goto END;					
+					if(UserParam.atMode == AT_MODE)
+					{
+					 	goto END;
 					}
-					if(bytes_read == 0){
-						WifiConnStatus.connStatus = CONNECT_STATUS_FAIL;
+
+					tcpClient_SelectFd(0, 0);
+
+					if(ls.tcpServerFd < 0)
+					{
+						printf("tcp server socket err\n\r");
 						goto END;
-					}else{
+					}
+					
+					if(FD_ISSET(ls.tcpServerFd, &(ls.readfd)))
+					{
+						newfd = accept(ls.tcpServerFd, &addr, (socklen_t *)&addrLen);
+						WifiConnStatus.connectFd = newfd;
+						if(newfd < 0)
+						{
+							printf("Neeed to Restart Lan_TcpServer\n\r");
+							goto END;
+						}
+						printf("detected new client as %d\n\r", newfd);
+						WifiConnStatus.connStatus = CONNECT_STATUS_OK;
+						ret = AddTcpNewClient(newfd, &addr); 
+					}
+
+					for(i = 0;i < LAN_TCPCLIENT_MAX; i++)
+					{
+						fd = ls.tcpClient[i].fd;
+						if(fd < 0)
 						continue;
+
+						if(FD_ISSET(fd, &(ls.readfd)))
+						{
+							ret = recv(fd, recv_data, g_RecvBufSize, 0);
+							if(ret > 0)
+							{
+								j = 0;
+								while(j < ret)
+								{
+									BSP_UartPutcPolled(*(recv_data+j));
+									j++;	
+								}
+
+								memset(recv_data, 0, g_RecvBufSize);
+							}else if(ret <= 0){
+								close(ls.tcpClient[i].fd);
+								ls.tcpClient[i].fd = -1;
+							}
+						}
 					}
-				}
-				WifiConnStatus.connStatus = CONNECT_STATUS_OK;
-				recv_data[bytes_read] = '\0'; 
-				while (1) {
-					if (uart_sendStart == 0 && uart_hasData == 0) {
-						memcpy((INT8U *)uart_send_data, (INT8U *)recv_data, bytes_read);
-						uart_send_len = bytes_read;
-						uart_hasData = 1;                                                                                                                                                                                                                                                                                                                                                               
-						break;
-					} else {
-						OSTimeDly(1);
-					}
-				} 
-			} else {
-				break;
-			}
-		
-		} else {
+					
+				}												
+			}					
+		}/*end if UserParam.atMode == DATA_MODE*/
+		 else {
 			goto END;
 		}
 	}
 
 END:
 	WifiConnStatus.connStatus = CONNECT_STATUS_FAIL;
-	uart_recvEnd = 0;	
-	uart_rec_len = 0;
-	net_sendStart = 0;
-	net_send_len = 0;
 	
-	if(WifiConnStatus.connectFd >= 0)
+	if(type == SOCK_SERVER)
 	{
-		lwip_close(WifiConnStatus.connectFd);
-		WifiConnStatus.connectFd = -1;
+		for(i = 0;i < LAN_TCPCLIENT_MAX; i++)
+		{
+			if(ls.tcpClient[i].fd >= 0)
+			{
+				close(ls.tcpClient[i].fd);
+				ls.tcpClient[i].fd = -1;
+			}	
+		}
+
+		if(ls.tcpServerFd >= 0)
+		{
+			close(ls.tcpServerFd);
+			ls.tcpServerFd = -1;
+		}
 	}
 
 	if(WifiConnStatus.sockfd >= 0)
@@ -607,19 +677,19 @@ VOID SendThread(VOID *arg)
 		}
 
 		if (UserParam.atMode == DATA_MODE) {
-			switch (WifiConnStatus.socketProtocol) {
+			switch (UserParam.socketProtocol) {
 				case 0:	/* UDP connect */
-					if (WifiConnStatus.socketType == SOCK_CLIENT) {
+					if (UserParam.socketType == SOCK_CLIENT) {
 						UDPSendTask(SOCK_CLIENT);
-					} else if (WifiConnStatus.socketType == SOCK_SERVER) {
+					} else if (UserParam.socketType == SOCK_SERVER) {
 						UDPSendTask(SOCK_SERVER);
 					} 
 					break;
 
 				case 1:	/* TCP connect */
-					if (WifiConnStatus.socketType == SOCK_CLIENT) {
+					if (UserParam.socketType == SOCK_CLIENT) {
 						TCPSendTask(SOCK_CLIENT);
-					} else if (WifiConnStatus.socketType == SOCK_SERVER) {
+					} else if (UserParam.socketType == SOCK_SERVER) {
 						TCPSendTask(SOCK_SERVER);
 					}
 					break;
@@ -642,21 +712,21 @@ VOID RecvThread(VOID *arg)
 		}
 
 		if (UserParam.atMode == DATA_MODE) {
-			switch (WifiConnStatus.socketProtocol) {
+			switch (UserParam.socketProtocol) {
 				case 0:	/* UDP connect */
-					if (WifiConnStatus.socketType == SOCK_CLIENT) {
+					if (UserParam.socketType == SOCK_CLIENT) {
 						UDPRecvTask(SOCK_CLIENT);	
 					
-					} else if (WifiConnStatus.socketType == SOCK_SERVER) {
+					} else if (UserParam.socketType == SOCK_SERVER) {
 					   	UDPRecvTask(SOCK_SERVER);
 
 					}
 					break;
 
 				case 1:	/* TCP connect */
-					if (WifiConnStatus.socketType == SOCK_CLIENT) {
+					if (UserParam.socketType == SOCK_CLIENT) {
 						TCPRecvTask(SOCK_CLIENT);					
-					} else if (WifiConnStatus.socketType == SOCK_SERVER) {
+					} else if (UserParam.socketType == SOCK_SERVER) {
 						TCPRecvTask(SOCK_SERVER);
 					}
 					break;

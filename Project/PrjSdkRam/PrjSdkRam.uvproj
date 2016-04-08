@@ -345,7 +345,7 @@
               <MiscControls>--littleend --loose_implicit_cast</MiscControls>
               <Define>USE_CORTEX_M3</Define>
               <Undefine></Undefine>
-              <IncludePath>..\..\Source\Include;..\..\Source\Ports\Cortex-M3;..\..\Source\uCOS-II;..\..\Source\BSP;..\..\Source\WiFi\include;..\..\Source\LwIP\src\include;..\..\Source\LwIP\port\include;..\..\Source\LwIP\src\include\ipv4;..\..\Source\LwIP\src\include\ipv6;..\..\Source\LwIP\src\include\lwip;..\..\Source\LwIP\src\include\netif;..\..\Source\LwIP\port\include\netif</IncludePath>
+              <IncludePath>..\..\Source\Include;..\..\Source\Ports\Cortex-M3;..\..\Source\uCOS-II;..\..\Source\BSP;..\..\Source\WiFi\include;..\..\Source\LwIP\src\include;..\..\Source\LwIP\port\include;..\..\Source\LwIP\src\include\ipv4;..\..\Source\LwIP\src\include\ipv6;..\..\Source\LwIP\src\include\lwip;..\..\Source\LwIP\src\include\netif;..\..\Source\LwIP\port\include\netif;..\..\Source\App\SerialNet</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -751,11 +751,6 @@
           <GroupName>Sys</GroupName>
           <Files>
             <File>
-              <FileName>app_main.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\..\Source\Sys\app_main.c</FilePath>
-            </File>
-            <File>
               <FileName>main.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\Source\Sys\main.c</FilePath>
@@ -856,6 +851,11 @@
               <FilePath>..\..\Source\Lib\wcore.lib</FilePath>
             </File>
             <File>
+              <FileName>libairkiss_log.lib</FileName>
+              <FileType>4</FileType>
+              <FilePath>..\..\Source\Lib\libairkiss_log.lib</FilePath>
+            </File>
+            <File>
               <FileName>libairkiss.lib</FileName>
               <FileType>4</FileType>
               <FilePath>..\..\Source\Lib\libairkiss.lib</FilePath>
@@ -870,30 +870,30 @@
               <FileType>4</FileType>
               <FilePath>..\..\Source\Lib\libairkiss_aes_log.lib</FilePath>
             </File>
-            <File>
-              <FileName>libairkiss_log.lib</FileName>
-              <FileType>4</FileType>
-              <FilePath>..\..\Source\Lib\libairkiss_log.lib</FilePath>
-            </File>
           </Files>
         </Group>
         <Group>
           <GroupName>SerialNet</GroupName>
           <Files>
             <File>
+              <FileName>serialNet.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\Source\App\SerialNet\serialNet.c</FilePath>
+            </File>
+            <File>
+              <FileName>nl6621_uart.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\Source\App\SerialNet\nl6621_uart.c</FilePath>
+            </File>
+            <File>
+              <FileName>ring_buffer.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\Source\App\SerialNet\ring_buffer.c</FilePath>
+            </File>
+            <File>
               <FileName>at_cmd.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\Source\App\SerialNet\at_cmd.c</FilePath>
-            </File>
-            <File>
-              <FileName>at_cmd.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\..\Source\App\SerialNet\at_cmd.h</FilePath>
-            </File>
-            <File>
-              <FileName>common.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\..\Source\App\SerialNet\common.h</FilePath>
             </File>
             <File>
               <FileName>ping.c</FileName>
@@ -901,34 +901,14 @@
               <FilePath>..\..\Source\App\SerialNet\ping.c</FilePath>
             </File>
             <File>
-              <FileName>ping.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\..\Source\App\SerialNet\ping.h</FilePath>
-            </File>
-            <File>
-              <FileName>serialNet.c</FileName>
+              <FileName>strlib.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\..\Source\App\SerialNet\serialNet.c</FilePath>
-            </File>
-            <File>
-              <FileName>serialNet.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\..\Source\App\SerialNet\serialNet.h</FilePath>
+              <FilePath>..\..\Source\App\SerialNet\strlib.c</FilePath>
             </File>
             <File>
               <FileName>socketCom.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\Source\App\SerialNet\socketCom.c</FilePath>
-            </File>
-            <File>
-              <FileName>socketCom.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\..\Source\App\SerialNet\socketCom.h</FilePath>
-            </File>
-            <File>
-              <FileName>strlib.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\..\Source\App\SerialNet\strlib.c</FilePath>
             </File>
           </Files>
         </Group>

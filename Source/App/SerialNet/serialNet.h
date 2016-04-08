@@ -23,9 +23,6 @@
 /*************** Serial to wifi interface *****************/
 /**********************************************************/
 
-/* Receive one byte from uart, called by BSP_UartISR interrupt
- * function. */
-void uart_data_recv(char Dummy);
 
 /* When the smart config finish, serialNet mode will called it
  * to finish internal task.
@@ -33,7 +30,7 @@ void uart_data_recv(char Dummy);
 void ResponseSmartconfig(void);
 
 /* SerialNet SDK entry function */
-int TestSerialToWifi(void);	 
+void TestSerialToWifi(void * pParam);	 
 
 int init_default_data(void);
 

@@ -22,12 +22,15 @@
 #include "socketCom.h"
 #include "at_cmd.h"
 #include "ping.h"
+#include "nl6621_uart.h"
 
 #define USER_PARAM_FLAG_INVALID    	(0x0)	   			/* User parameters flag Macro */
 #define USER_PARAM_FLAG_VALID    	(0x01020304)	   	/* User parameters flag Macro */
 
 #define USER_GPIO_MAX				(3)
 
+#define UART_RTS					(5)
+#define UART_CTS					(6)
 #define USER_GPIO_IDX_LED  			(9)    				/* indicater LED gpio */ 
 #define USER_GPIO_FACTORY 			(10)				/* factory mode gpio */ 
 
@@ -37,13 +40,17 @@
 #define DEFAULT_REMOTE_COMM_PORT  	(8101)
 #define DEFAULT_REMOTE_COMM_IP 		"192.168.0.100"
 
+#define MAX_AT_RECV_SIZE			(200)
 #define MAX_RECV_BUFFER_SIZE 		(1400)
 #define MIN_RECV_BUFFER_SIZE 		(32)
-#define DEF_RECV_BUFFER_SIZE 		(1024)
+#define DEF_RECV_BUFFER_SIZE 		(1024 * 10)
 
 #define DEFAULT_RECV_BUFFER_SIZE    (256)
 
 #define DEFAULT_SEND_DATA_GAP 		(100)		/* 100ms */
+
+#define SEND_DONE					(0)
+#define SEND_START					(1)
 
 //#pragma pack(1)
 
@@ -175,7 +182,6 @@ extern UINT8 	uart_recvEnd;
 extern UINT32	uart_rec_len;
 extern char 	uart_rec_data[MAX_RECV_BUFFER_SIZE + 1];
 
-extern UINT8 	net_sendStart;
 extern UINT32	net_send_len;
 extern char 	net_send_data[MAX_RECV_BUFFER_SIZE + 1];
 
@@ -184,7 +190,6 @@ extern UINT8	uart_hasData;				//0: 无数据发送 1:接收到数据
 extern char 	uart_send_data[MAX_RECV_BUFFER_SIZE + 1];
 extern UINT32	uart_send_len;
 extern UINT8	end_sendFlags;
-extern NST_TIMER *pTimer;
 extern BOOL_T   isCancelled;
 extern UINT8    ScanFlag;
 
@@ -195,7 +200,7 @@ extern UINT8    ScanFlag;
 extern SYS_EVT_ID link_status;
 extern UINT8 smtconfigBegin;
 
-extern UINT32 g_RecvBufSize;
+//extern UINT32 g_RecvBufSize;
 
 extern USER_CFG_PARAM UserParam;
 extern CFG_PARAM SysParam;
@@ -203,6 +208,7 @@ extern CFG_PARAM SysParam;
 extern CONN_STATUS WifiConnStatus;
 
 extern OS_EVENT *modeSwitchSem;
+extern OS_EVENT *sendSwitchSem;
 extern OS_EVENT *uartMessgSem;
 
 

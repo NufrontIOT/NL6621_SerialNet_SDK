@@ -22,7 +22,9 @@ typedef struct{
 
 BEACON_OPT beacon_opt ={100,0};
 
+unsigned char uart_rec_atcmd[MAX_AT_RECV_SIZE];
 
+extern at_stateType  at_state;
 extern UINT8 smtconfigBegin;
 extern CFG_PARAM SysParam;
 extern NET_IF netif;
@@ -31,9 +33,10 @@ extern UINT8   PermanentAddress[MAC_ADDR_LEN];
 extern const INT8U FwType[];
 extern const INT8U FwVerNum[3];
 
+
 const INT8U AtVerNum[3] = {
     0x01,  /* Main version */ 
-    0x04,  /* Sub version */
+    0x05,  /* Sub version */
     0x00   /* Internal version */
 };
 
@@ -101,81 +104,81 @@ static int stringTorequest(char *str)
     for (i = 0; i<strlen(str); i++)
         str[i] = toupper(str[i]);
 
-    if (0 == strcmp(str, "HELP")) {
+    if (0 == strcmp(str, "+HELP")) {
         return REQ_HELP;
-    } else if (0 == strcmp(str, "VER")) {
+    } else if (0 == strcmp(str, "+VER")) {
         return REQ_VER;
-    } else if(0 == strcmp(str, "SVER")) {
+    } else if(0 == strcmp(str, "+SVER")) {
         return REQ_SVER;
-    } else if (0 == strcmp(str, "SAVE")) {
+    } else if (0 == strcmp(str, "+SAVE")) {
         return REQ_SAVE;
-    } else if (0 == strcmp(str, "FACTORY")) {
+    } else if (0 == strcmp(str, "+FACTORY")) {
         return REQ_FACTORY;
-    } else if (0 == strcmp(str, "RST")) {
+    } else if (0 == strcmp(str, "+RST")) {
         return REQ_RST;
-    } else if (0 == strcmp(str, "SYSTIME")) {
+    } else if (0 == strcmp(str, "+SYSTIME")) {
         return REQ_SYSTIME;
 
-    }else if (0 == strcmp(str, "BAUDRATE")) {
+    }else if (0 == strcmp(str, "+BAUDRATE")) {
         return REQ_BAUDRATE;
-    } else if (0 == strcmp(str, "UARTFT")) {
+    } else if (0 == strcmp(str, "+UARTFT")) {
         return REQ_UARTFT;		
-    } else if (0 == strcmp(str, "UARTFL")) {
+    } else if (0 == strcmp(str, "+UARTFL")) {
         return REQ_UARTFL;
 
-    } else if (0 == strcmp(str, "MSLP")) {
+    } else if (0 == strcmp(str, "+MSLP")) {
         return REQ_MSLP;
-    } else if (0 == strcmp(str, "LSLPT")) {
+    } else if (0 == strcmp(str, "+LSLPT")) {
         return REQ_LSLPT;
 
 
-    } else if (0 == strcmp(str, "IPCONFIG")) {
+    } else if (0 == strcmp(str, "+IPCONFIG")) {
         return REQ_IPCONFIG;
-    } else if (0 == strcmp(str, "PING")) {
+    } else if (0 == strcmp(str, "+PING")) {
         return REQ_PING;
-    } else if (0 == strcmp(str, "MAC")) {
+    } else if (0 == strcmp(str, "+MAC")) {
         return REQ_MAC;
-    } else if (0 == strcmp(str, "WQSOPT")) {
+    } else if (0 == strcmp(str, "+WQSOPT")) {
         return REQ_WQSOPT;
-    } else if (0 == strcmp(str, "WSCANAP")) {
+    } else if (0 == strcmp(str, "+WSCANAP")) {
         return REQ_WSCANAP;
-    } else if (0 == strcmp(str, "WSTOP")) {
+    } else if (0 == strcmp(str, "+WSTOP")) {
         return REQ_WSTOP;
-    } else if (0 == strcmp(str, "WPHYMODE")) {
+    } else if (0 == strcmp(str, "+WPHYMODE")) {
         return REQ_WPHYMODE;
-    } else if (0 == strcmp(str, "WTXRATE")) {
+    } else if (0 == strcmp(str, "+WTXRATE")) {
         return REQ_WTXRATE;
-    } else if (0 == strcmp(str, "WSBCN")) {
+    } else if (0 == strcmp(str, "+WSBCN")) {
         return REQ_WSBCN;
 
 
 
-	} else if (0 == strcmp(str, "WSCAP")) {
+	} else if (0 == strcmp(str, "+WSCAP")) {
 		return REQ_WSCAP;
-	} else if (0 == strcmp(str, "WSMTCONF")) {
+	} else if (0 == strcmp(str, "+WSMTCONF")) {
 		return REQ_WSMTCONF;
-	} else if (0 == strcmp(str, "NQSCNN")) {
+	} else if (0 == strcmp(str, "+NQSCNN")) {
 		return REQ_NQSCNN;	 
-	} else if (0 == strcmp(str, "NLOCIP")) {
+	} else if (0 == strcmp(str, "+NLOCIP")) {
 		return REQ_NLOCIP;
-	} else if (0 == strcmp(str, "WSACONF")) {
+	} else if (0 == strcmp(str, "+WSACONF")) {
 		return REQ_WSACONF;	
-	} else if (0 == strcmp(str, "AIRKISS")) {
+	} else if (0 == strcmp(str, "+AIRKISS")) {
 	    return REQ_AIRKISS;	
 #if UDP_BROADCAST_SWITCH
-    } else if (0 == strcmp(str, "BCTTXSTART")) {
+    } else if (0 == strcmp(str, "+BCTTXSTART")) {
         return REQ_BCTTXSTART;
-    } else if (0 == strcmp(str, "BCTTXSTOP")) {
+    } else if (0 == strcmp(str, "+BCTTXSTOP")) {
         return REQ_BCTTXSTOP;
-    } else if (0 == strcmp(str, "BCTTXDATA")) {
+    } else if (0 == strcmp(str, "+BCTTXDATA")) {
         return REQ_BCTTXDATA;
-    } else if (0 == strcmp(str, "BCTRXSTART")) {
+    } else if (0 == strcmp(str, "+BCTRXSTART")) {
         return REQ_BCTRXSTART;
-    } else if (0 == strcmp(str, "BCTRXSTOP")) {
+    } else if (0 == strcmp(str, "+BCTRXSTOP")) {
         return REQ_BCTRXSTOP;
 #endif
 
-    } else if (0 == strcmp(str, "QUIT")) {
+    } else if (0 == strcmp(str, "+QUIT")) {
         return REQ_QUIT;
     }
 
@@ -858,7 +861,7 @@ static void responseWSBCN(int argc, char *argv[])
         period = atoi(argv[1]);
         mode = (UINT8)atoi(argv[2]);
 
-        if (period < 100 || period > 65535|| (mode != 0 && mode != 1)) {
+        if (period < 0 || period > 65535|| (mode != 0 && mode != 1)) {
             printf("+ERROR=%d\n\r", INVALID_PARAMETER);
             return;
         }else {	
@@ -1222,7 +1225,7 @@ static void responseNLOCIP(int argc, char *argv[])
 static void responseWSACONF(int argc, char *argv[])
 {	
 	if(argc == 1){
-		sys_thread_new("SoftApConfThread",SoftApConfThread, NULL, NST_TEST_APP_TASK_STK_SIZE, TCPIP_THREAD_PRIO+8);
+		sys_thread_new("SoftApConfThread",SoftApConfThread, NULL, NST_TEST_APP_TASK_STK_SIZE, TCPIP_THREAD_PRIO+1);
 	}else{
 		printf("+ERROR=%d\r\n", INVALID_PARAMETER);
 	}
@@ -1434,13 +1437,13 @@ static void responseQUIT(int argc ,char *argv[])
 
     UserParam.atMode = DATA_MODE;
 
-    /* Reset net send/receive viable */
-    uart_recvEnd = 0;	
-    uart_rec_len = 0;
-    net_sendStart = 0;
-    net_send_len = 0;
-
-    /* start to create TCP/UDP connect socket */
+//    /* Reset net send/receive viable */
+//    uart_recvEnd = 0;	
+//    uart_rec_len = 0;
+//    net_sendStart = 0;
+//    net_send_len = 0;
+//
+//    /* start to create TCP/UDP connect socket */
     memset(&WifiConnStatus, 0, sizeof(WifiConnStatus));
     WifiConnStatus.connStatus = CONNECT_STATUS_FAIL;
     WifiConnStatus.socketProtocol = UserParam.socketProtocol;
@@ -1493,9 +1496,9 @@ static void parseParameter(char *args)
     processCommand(argc, argv);
 }
 
-
 VOID AtThread(VOID *arg)
 {
+	int Err;
 
 #if OS_CRITICAL_METHOD == 3u                     /* Allocate storage for CPU status register           */
     OS_CPU_SR  cpu_sr = 0u;
@@ -1513,38 +1516,14 @@ VOID AtThread(VOID *arg)
 
     while (1) {
 		if (UserParam.atMode == AT_MODE) {
-			if (uart_recvEnd == 1) {
- 
-			    uart_rec_data[0] = toupper(uart_rec_data[0]);
-			    uart_rec_data[1] = toupper(uart_rec_data[1]);
-
-				if (strStartsWith(uart_rec_data, AT_HEADER) == 1) {	
-					if (0 == strcmp(uart_rec_data, AT_HEADER)) {	/* AT test command */
-						printf("+OK\n\r");
-
-					} else {	 /* AT command with parameters */
-						if (strStartsWith(uart_rec_data, AT_HEADER_CMD) == 1) {
-							parseParameter(&uart_rec_data[3]);
-
-						} else {
-							printf("+ERROR= %d\n\r", INVALID_COMMAND);
-						}
-					}
-
-				} else {
-					printf("+ERROR= %d\n\r", INVALID_COMMAND);
-				}
-
-                OS_ENTER_CRITICAL();
-				uart_rec_len = 0;
-			    uart_recvEnd = 0;
-		  		memset(uart_rec_data, '\0', MAX_RECV_BUFFER_SIZE);
-				OS_EXIT_CRITICAL();
-			} else {
-				OSTimeDly(20);
+			if(at_state == at_statProcess)
+			{
+				parseParameter(uart_rec_atcmd);
+				at_state = at_statIdle;
 			}
+
 		} else {
-			OSTimeDly(100);
+			OSTimeDly(20);
 		}
 	}
 }
@@ -1552,21 +1531,21 @@ VOID AtThread(VOID *arg)
 /*
  * software timer for copying data from uart send buffer to net buffer. 
  **/
-static void timerFuncProcess(void *ptmr, void *parg)
-{
-	if (net_sendStart == 1) {
-		return ;
-	} else if (uart_rec_len != 0) {
-		net_send_len = uart_rec_len;
-		
-		uart_rec_data[uart_rec_len] = '\0';
-		memcpy((INT8U *)net_send_data, (INT8U *)uart_rec_data, uart_rec_len);
-
-		//clear uart and begin to recv new 
-		uart_rec_len = 0;
-		net_sendStart = 1;
-	}
-}
+//static void timerFuncProcess(void *ptmr, void *parg)
+//{
+//	if (net_sendStart == 1) {
+//		return ;
+//	} else if (uart_rec_len != 0) {
+//		net_send_len = uart_rec_len;
+//		
+//		uart_rec_data[uart_rec_len] = '\0';
+//		memcpy((INT8U *)net_send_data, (INT8U *)uart_rec_data, uart_rec_len);
+//
+//		//clear uart and begin to recv new 
+//		uart_rec_len = 0;
+//		net_sendStart = 1;
+//	}
+//}
 
 /*
  * process mode switch function. when uart receive one frame only obtain "+++" string,
@@ -1574,25 +1553,25 @@ static void timerFuncProcess(void *ptmr, void *parg)
  **/
 VOID UartRecvThread(VOID *arg)
 {
-	void *pMesg;
-	UINT8 err;
-	NST_InitTimer(&pTimer, timerFuncProcess, NULL, NST_TRUE);
-
-	uartMessgSem = OSMboxCreate(NULL);
-	while (1) {
-		pMesg = OSMboxPend(uartMessgSem, 0, &err);
-		
-		if(strcmp((char *)pMesg,"start timer") == 0)	
-		NST_SetTimer(pTimer, UserParam.frameGap);
-
-		if(strcmp((char *)pMesg,"cancelled timer") == 0)
-		NST_CancelTimer(pTimer, &isCancelled);
-		
-		if (pMesg != NULL && strcmp((char *)pMesg,"-14") == 0) {
-			printf("+ERROR=%s\n\r", (char *)pMesg);
-			OSTimeDly(50);
-		}
-	}
+//	void *pMesg;
+//	UINT8 err;
+//	NST_InitTimer(&pTimer, timerFuncProcess, NULL, NST_TRUE);
+//
+//	uartMessgSem = OSMboxCreate(NULL);
+//	while (1) {
+//		pMesg = OSMboxPend(uartMessgSem, 0, &err);
+//		
+//		if(strcmp((char *)pMesg,"start timer") == 0)	
+//		NST_SetTimer(pTimer, UserParam.frameGap);
+//
+//		if(strcmp((char *)pMesg,"cancelled timer") == 0)
+//		NST_CancelTimer(pTimer, &isCancelled);
+//		
+//		if (pMesg != NULL && strcmp((char *)pMesg,"-14") == 0) {
+//			printf("+ERROR=%s\n\r", (char *)pMesg);
+//			OSTimeDly(50);
+//		}
+//	}
 }
 
 VOID SoftApConfThread(VOID *arg)
@@ -1924,131 +1903,6 @@ SCAN_LOOP:
 
 #endif
 
-void uart_data_recv(char Dummy)
-{
-    static unsigned char recv_start = 0;
-
-	/* when in data mode ,'+++' means escape */
-	if (UserParam.atMode == DATA_MODE) {
-			
-		if(uart_rec_len < MAX_RECV_BUFFER_SIZE){
-			uart_rec_data[uart_rec_len] = Dummy;
-			OSMboxPost(uartMessgSem ,(void *)"start timer");
-			uart_rec_len++;
-		}
-
-		/* If these is no client connect to server or connect to server failed,
-		 * only	catch "+++" string and filter the other char.
-		 * */
-		if (WifiConnStatus.connStatus != CONNECT_STATUS_OK) {
-			if ((uart_rec_len == 3)) {
-			uart_rec_data[3] = '\0';
-				if (strcmp(uart_rec_data, "+++") == 0) {
-					OSSemPost(modeSwitchSem);
-					OSMboxPost(uartMessgSem ,(void *)"cancelled timer");
-				}else{
-					uart_rec_len = 0;
-				}	
-			} else if (uart_rec_len > 5) {
-				uart_rec_len = 0;
-			}
-			return;		
-		}
-		
-		if(uart_rec_len == MAX_RECV_BUFFER_SIZE){
-			if( end_sendFlags < 3){
-				if(strcmp(&Dummy,"+") == 0){
-					end_sendFlags++;
-				}else{
-					end_sendFlags = 0;
-					if (uartMessgSem != NULL)
-					OSMboxPost(uartMessgSem ,(void *)"-14");
-				}
-			}else if(end_sendFlags == 3){ 
-				if(strcmp(&Dummy,"\r") == 0)
-					end_sendFlags++;
-				else
-					end_sendFlags = 0;
-			}else if(end_sendFlags == 4){
-				if(strcmp(&Dummy,"\n") == 0){
-					memset(uart_send_data, '\0', MAX_RECV_BUFFER_SIZE);
-					end_sendFlags = 0;
-					uart_rec_len = 3;
-					strcpy(uart_rec_data,"+++");
-					uart_rec_data[3] = '\0';
-					OSSemPost(modeSwitchSem);
-					OSMboxPost(uartMessgSem ,(void *)"cancelled timer");
-				}else
-					end_sendFlags = 0;
-			}
-		}
-		
-		if ((uart_rec_len == 3)) {
-			uart_rec_data[3] = '\0';
-			if (strcmp(uart_rec_data, "+++") == 0) {
-				OSSemPost(modeSwitchSem);
-				OSMboxPost(uartMessgSem ,(void *)"cancelled timer");
-			}
-
-		}else if (uart_rec_len % (UserParam.frameLength) == 0 && uart_rec_len < MAX_RECV_BUFFER_SIZE) {
-			/* make sure module in connect status */
-			if ((WifiConnStatus.connStatus == CONNECT_STATUS_OK) 
-				&& ((link_status == SYS_EVT_LINK_UP) 
-				|| (link_status == SYS_EVT_SCAN_DONE))) {
-				if (net_sendStart == 0)	{
-					uart_rec_data[uart_rec_len] = '\0';
-					net_send_len = uart_rec_len;
-					uart_rec_len = 0;
-					memcpy((INT8U *)net_send_data, (INT8U *)uart_rec_data, net_send_len);
-					net_sendStart = 1;
-				} /*else {
-						if (uartMessgSem != NULL)
-						OSMboxPost(uartMessgSem ,(void *)"-14");
-				}*/
-			} else {
-				if (uartMessgSem != NULL)
-					OSMboxPost(uartMessgSem ,(void *)"-18");
-			}
-		}
-	} else {
-       if(uart_recvEnd == 0){
-			if(Dummy == 0x0A ) {	/* 'enter' keybad, carriage return) */ 
-			    if((uart_rec_data[0] == 'A' || uart_rec_data[0] == 'a') && (uart_rec_data[1] == 'T' || uart_rec_data[1] == 't')){
-					 if(uart_rec_data[2] == '+' || uart_rec_data[2] == 0x0D){
-					    uart_rec_len--;//不包括0x0A
-						uart_recvEnd = 1;
-				        recv_start = 0;	
-			            uart_rec_data[uart_rec_len] = '\0';	 
-					 } else {
-					 	uart_rec_len = 0;
-		                recv_start = 0;	 
-					 }
-			   }
-			} else {
-				uart_rec_data[uart_rec_len] = Dummy;
-
-			    if(recv_start == 0){
-					if(uart_rec_data[uart_rec_len] == 'A' || uart_rec_data[uart_rec_len] == 'a'){
-					   uart_rec_data[0] = 'A';
-					   uart_rec_len = 0;
-					}
-	
-					if(uart_rec_len == 1 && (uart_rec_data[1] == 'T' || uart_rec_data[1] == 't') && uart_rec_data[0] == 'A' || uart_rec_data[0] == 'a'){
-				       recv_start = 1;
-					} else {
-					   uart_rec_len = 0;  
-					}
-			   }
-			   if(uart_rec_len++ > 200)	//AT指令不可能超过200.
-			   {
-			   	  recv_start = 0;
-				  uart_rec_len = 0;
-				  uart_recvEnd = 0;
-			   }
-			}
-	   }
-	}	
-}
 
 /***********************************************************/
 /**************** External called interface ****************/

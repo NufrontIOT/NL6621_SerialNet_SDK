@@ -14,6 +14,8 @@
 #define UART_FRAME_MIN_LEN				(30)
 #define UART_FRAME_MAX_LEN				(10000)
 
+#define g_RecvBufSize					(2048)
+#define g_SendBufSize					(2048)
 
 /* AT command request number */
 typedef enum{

@@ -64,7 +64,7 @@
 #define  NST_APP_TASK_START_PRIO                 (OS_TASK_TMR_PRIO + 8)   
 
 #define  LWIP_TASK_START_PRIO                       (OS_TASK_TMR_PRIO + 9)      
-#define  LWIP_TASK_END_PRIO                           (OS_TASK_TMR_PRIO + 18)  
+#define  LWIP_TASK_END_PRIO                           (OS_TASK_TMR_PRIO + 14)  
 
 
 /*                                                                                                        
@@ -98,7 +98,7 @@
 
 
 /* 堆内存定义*/
-#define OS_DMEM_POOL_SIZE         1024*20    /*     Determine the size of dynamic memory pool     */
+#define OS_DMEM_POOL_SIZE         1024*40    /*     Determine the size of dynamic memory pool     */
 
 /*
 ********************************************************************************************************* 
@@ -106,20 +106,19 @@
 ********************************************************************************************************* 
 */ 
 #ifdef TEST_APP_SUPPORT
-
 #define TEST_SERIAL_TO_WIFI
-
 //#define TEST_DIRECT_CONFIG
+//#define TEST_SOFTAP_CONFIG
 //#define TEST_SNIFFER
 //#define TEST_UART_UPDATE_FW
 //#define TEST_OTA_UPDATE_FW
+#define TEST_AIRKISS
 
 #define TEST_TCP_SERVER
 //以下选项每次测试时只可打开其中之一
 #define TEST_TCP_CLIENT
 //#define TEST_UDP_SERVER
 //#define TEST_UDP_CLIENT
-#define TEST_AIRKISS
 
 #endif //TEST_APP_SUPPORT//
 

@@ -33,7 +33,7 @@ const INT8U FwCreatedTime[] = __TIME__;
 const INT8U FwType[] = "SDK";
 const INT8U FwVerNum[3] = {
 	0x01,  /* Main version */ 
-	0x11, /* Sub version */
+	0x13, /* Sub version */
 	0x00  /* Internal version */
 };
 
@@ -64,7 +64,7 @@ VOID DisplayVersion(VOID)
 VOID SystemInit(VOID)
 {
     BSP_ClkInit();
-	   
+    
     InitRomHookFuncTbl();
 
     OSInit();
@@ -141,9 +141,7 @@ VOID SysMgmtMain(VOID * pParam)
     OSTimeDly(100);
 #endif // CPU_USAGE_STAT //
 
-#ifndef TEST_SERIAL_TO_WIFI
 	DisplayVersion();
-#endif
 
 	while (1)
 	{

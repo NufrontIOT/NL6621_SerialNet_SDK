@@ -22,6 +22,7 @@
 /* Private functions ---------------------------------------------------------*/
 
 extern VOID BSP_LowMacIntISR(VOID);
+extern void timerFuncProcess(VOID);
 
 /*******************************************************************************
 * Function Name  : NMIException
@@ -336,7 +337,6 @@ __irq void TMR1_IRQHandler(void)
     RegEoi = *TmrsEoi;
     RegEoi = RegEoi;
 
-
    // 开中断
     NVIC_EnableIRQ(TMR1_IRQn);
 
@@ -367,6 +367,12 @@ __irq void TMR0_IRQHandler(void)
     RegEoi = *Tmr0Eoi;
     RegEoi = *TmrsEoi;
     RegEoi = RegEoi;
+
+	/****timer for copying data from uart send buffer to net buffer*****/
+ 	{
+		timerFuncProcess();
+	}
+	/*******************************************************************/
     
 
    // 开中断

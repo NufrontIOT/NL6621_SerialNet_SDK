@@ -59,12 +59,10 @@ VOID InfLoadDefaultParam(VOID)
 	cfg->WiFiCfg.KeyIndex = 0;
 	sprintf((char *)cfg->WiFiCfg.PSK, "1234567890");
 	cfg->WiFiCfg.KeyLength = strlen("1234567890");
-	cfg->WiFiCfg.WmmEn = 0;			// disable wmm
-	cfg->WiFiCfg.PhyMode = 1;
+	cfg->WiFiCfg.WmmEn = 0;			// enable wmm
 		
 	// ip config
 	cfg->IPCfg.bDhcp = 1;
-	cfg->IPCfg.DhcpTryTimes = 5;
 	cfg->IPCfg.Ip[0] = 192;
 	cfg->IPCfg.Ip[1] = 168;
 	cfg->IPCfg.Ip[2] = 0;
@@ -625,7 +623,7 @@ INT32 InfTxRateSet(PARAM_RATE_MODE RateMode, PARAM_RATE_IDX RateIdx)
 -------------------------------------------------------------------------*/
 INT32 InfTxPwrLevelSet(PARAM_TX_PWR_LEVEL TxPwrLevel) 
 {
-	if (TxPwrLevel > PARAM_TX_PWR_LEVEL_HIGH)
+	if (TxPwrLevel > PARAM_TX_PWR_LEVEL_10)
 		return -1;
 
 	PostTaskMsg(gpMacMngTskMsgQ, MLME_TX_PWR_LEVEL_SET_ID, (PUINT8)&TxPwrLevel, 1);
@@ -701,7 +699,7 @@ INT32 InfDeepSleepSet(UINT32 WakeUpMode)
 -------------------------------------------------------------------------*/
 INT8 InfPeerRssiGet(UINT8 pMacAddr[6] )
 {	
-    return MlmeGetRssi(pMacAddr);  
+    return MlmeGetRssi(pMacAddr);	  
 }
 
 /*   InfCurChGet   */
@@ -762,9 +760,6 @@ INT32  InfBeaconPeriodSet(UINT16 BcnPrd, UINT8 NotifyPeerEn)
 {
 	INT8U MsgBody[3] = {0};
 
-	if (BcnPrd < 100)
-		return -1;
-
 	NST_MOVE_MEM((INT8U *)MsgBody, (INT8U *)&BcnPrd, 2);
 	MsgBody[2] = NotifyPeerEn;
 	
@@ -800,7 +795,6 @@ INT32 InfListenIntervalSet(UINT8 ListenIntv, BOOL_T ListenDtim)
     
     return 0;
 }
-
 
 /*   InfDirectCfgStart   */
 /*-------------------------------------------------------------------------
@@ -1048,6 +1042,7 @@ INT32 InfVendorIESet(UINT8 * pIePtr, UINT8 IeLen)
 	PostTaskMsg(gpMacMngTskMsgQ, MLME_VENDOR_IE_SET_ID, (PUINT8)(MsgBody), 5);
 	return 0;
 }
+
 /*   InfSysTimeGet   */
 /*-------------------------------------------------------------------------
 	Description:	
@@ -1066,5 +1061,4 @@ UINT64 InfSysTimeGet(VOID)
 	LARGE_INTEGER Ticks = BSP_GetLaunchTicks();
 	return ((Ticks.QuadPart)/1024*125) + ((Ticks.QuadPart)%1024*125/1024);
 }
-
 
